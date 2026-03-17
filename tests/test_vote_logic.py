@@ -77,3 +77,13 @@ def test_topx_selection_count() -> None:
     assert counts["王国庆"] == 2
     assert counts["张三"] == 1
     assert rows[0][1] == "李涌睿"
+
+
+def test_topx_selection_count_respects_weight() -> None:
+    engine = VotingEngine(["李涌睿", "王国庆"])
+    engine.add_expert_ballot({"李涌睿": 1}, weight=2)
+    engine.add_expert_ballot({"王国庆": 1}, weight=1)
+    counts, rows = engine.settle_expert_selection_count()
+    assert counts["李涌睿"] == 2.0
+    assert counts["王国庆"] == 1.0
+    assert rows[0][1] == "李涌睿"

@@ -51,7 +51,7 @@ class VotingApp:
         self.qr_student_label = ttk.Label(link_frame, text="学生二维码（待生成）")
         self.qr_student_label.grid(row=2, column=1, columnspan=2, sticky="e", padx=12, pady=8)
 
-        weight_frame = ttk.LabelFrame(self.root, text="特定投票人权重设置（按“2、您的姓名”列匹配）")
+        weight_frame = ttk.LabelFrame(self.root, text="初评（权重设置 + 专家文件导入）")
         weight_frame.pack(fill="x", padx=12, pady=8)
         self.voter_name_var = tk.StringVar(value="")
         self.weight_var = tk.StringVar(value="1")
@@ -62,11 +62,11 @@ class VotingApp:
         ttk.Button(weight_frame, text="新增/更新权重", command=self.set_voter_weight).pack(side="left", padx=8)
         ttk.Button(weight_frame, text="重置权重", command=self.reset_weights).pack(side="left", padx=8)
         ttk.Button(weight_frame, text="Top-X次数统计", command=self.count_topx_frequency).pack(side="left", padx=8)
+        ttk.Button(weight_frame, text="导入专家文件", command=self.import_expert_file).pack(side="left", padx=8)
 
-        import_frame = ttk.LabelFrame(self.root, text="导入问卷星结果（支持.xlsx和.csv）")
+        import_frame = ttk.LabelFrame(self.root, text="终评（问卷星结果导入与结算）")
         import_frame.pack(fill="x", padx=12, pady=8)
 
-        ttk.Button(import_frame, text="导入专家文件", command=self.import_expert_file).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="导入学生文件", command=self.import_student_file).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="重置数据", command=self.reset_all).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="专家票结算", command=self.settle_expert).pack(side="left", padx=6, pady=8)
@@ -122,7 +122,8 @@ class VotingApp:
             self.output.insert("end", "\n专家票 Top-X 次数\n")
             self.output.insert("end", "排名\t候选人\t被选择次数\n")
             for r, name, c in rows:
-                self.output.insert("end", f"{r}\t{name}\t{c}\n")
+                display = int(c) if abs(c - int(c)) < 1e-9 else round(c, 2)
+                self.output.insert("end", f"{r}\t{name}\t{display}\n")
             self.output.insert("end", f"专家原始次数：{counts}\n")
 
         if self.engine.student_ballots:
@@ -130,7 +131,8 @@ class VotingApp:
             self.output.insert("end", "\n学生票 Top-X 次数\n")
             self.output.insert("end", "排名\t候选人\t被选择次数\n")
             for r, name, c in rows:
-                self.output.insert("end", f"{r}\t{name}\t{c}\n")
+                display = int(c) if abs(c - int(c)) < 1e-9 else round(c, 2)
+                self.output.insert("end", f"{r}\t{name}\t{display}\n")
             self.output.insert("end", f"学生原始次数：{counts}\n")
 
         if not self.engine.expert_ballots and not self.engine.student_ballots:

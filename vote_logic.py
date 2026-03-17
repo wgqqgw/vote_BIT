@@ -71,22 +71,22 @@ class VotingEngine:
         return totals, self._rank_from_totals(totals)
 
 
-    def _count_selected(self, ballots: List[Tuple[Dict[str, int], float]]) -> Dict[str, int]:
-        counts = {name: 0 for name in self.candidates}
-        for ballot, _ in ballots:
+    def _count_selected(self, ballots: List[Tuple[Dict[str, int], float]]) -> Dict[str, float]:
+        counts = {name: 0.0 for name in self.candidates}
+        for ballot, weight in ballots:
             for name in ballot.keys():
-                counts[name] += 1
+                counts[name] += weight
         return counts
 
-    def _rank_from_counts(self, counts: Dict[str, int]) -> List[Tuple[int, str, int]]:
+    def _rank_from_counts(self, counts: Dict[str, float]) -> List[Tuple[int, str, float]]:
         ordered = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
         return [(i + 1, name, score) for i, (name, score) in enumerate(ordered)]
 
-    def settle_expert_selection_count(self) -> tuple[Dict[str, int], List[Tuple[int, str, int]]]:
+    def settle_expert_selection_count(self) -> tuple[Dict[str, float], List[Tuple[int, str, float]]]:
         counts = self._count_selected(self.expert_ballots)
         return counts, self._rank_from_counts(counts)
 
-    def settle_student_selection_count(self) -> tuple[Dict[str, int], List[Tuple[int, str, int]]]:
+    def settle_student_selection_count(self) -> tuple[Dict[str, float], List[Tuple[int, str, float]]]:
         counts = self._count_selected(self.student_ballots)
         return counts, self._rank_from_counts(counts)
 
