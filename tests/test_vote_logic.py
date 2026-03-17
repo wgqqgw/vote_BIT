@@ -43,10 +43,22 @@ def test_weighted_ballot() -> None:
     assert totals["候选人6"] == 12.0
 
 
-def test_parse_wjx_ranking_text() -> None:
-    text = "李喆，特种雷达→赵泽玮，民用雷达->郑彭楠，特种雷达"
+def test_parse_wjx_ranking_text_comma_format() -> None:
+    text = "李喆，特种雷达→赵泽玮，民用雷达→郑彭楠，特种雷达"
     names = parse_wjx_ranking_text(text)
     assert names == ["李喆", "赵泽玮", "郑彭楠"]
+
+
+def test_parse_wjx_ranking_text_dash_and_bar_format() -> None:
+    text = "陈轲-特种雷达研究所┋张光伟-特种雷达研究所┋王江涛-民用雷达研究所"
+    names = parse_wjx_ranking_text(text)
+    assert names == ["陈轲", "张光伟", "王江涛"]
+
+
+def test_parse_wjx_ranking_text_with_varied_separators() -> None:
+    text = "李喆，特种雷达┋赵泽玮，民用雷达｜郑彭楠，特种雷达；张凯翔，特种雷达"
+    names = parse_wjx_ranking_text(text)
+    assert names == ["李喆", "赵泽玮", "郑彭楠", "张凯翔"]
 
 
 def test_invalid_ballot_reject() -> None:
@@ -59,9 +71,3 @@ def test_invalid_ballot_reject() -> None:
         assert False, "should raise"
     except ValueError:
         assert True
-
-
-def test_parse_wjx_ranking_text_with_varied_separators() -> None:
-    text = "李喆，特种雷达┋赵泽玮，民用雷达｜郑彭楠，特种雷达；张凯翔，特种雷达"
-    names = parse_wjx_ranking_text(text)
-    assert names == ["李喆", "赵泽玮", "郑彭楠", "张凯翔"]
