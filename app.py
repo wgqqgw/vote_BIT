@@ -10,6 +10,7 @@ from typing import Any
 import qrcode
 from PIL import Image, ImageTk
 from flask import Flask, redirect, render_template_string, request
+from pyngrok import ngrok
 from werkzeug.serving import make_server
 
 from vote_logic import VotingEngine
@@ -71,15 +72,12 @@ class FlaskServerThread(threading.Thread):
     def run(self) -> None:
         self.server.serve_forever()
 
-    def stop(self) -> None:
-        self.server.shutdown()
-
 
 class VotingApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("在线投票统计系统")
-        self.root.geometry("1100x760")
+        self.root.geometry("1120x780")
 
         self.candidates = [f"候选人{i}" for i in range(1, 8)]
         self.engine = VotingEngine(self.candidates)
@@ -87,6 +85,7 @@ class VotingApp:
         self.server_thread: FlaskServerThread | None = None
         self.server_host = self._get_local_ip()
         self.server_port = 8765
+        self.public_base_url: str | None = None
 
         self._build_flask_app()
         self._build_ui()
@@ -148,10 +147,17 @@ class VotingApp:
         top_frame = ttk.Frame(self.root)
         top_frame.pack(fill="x", padx=12)
 
+        self.server_mode_var = tk.StringVar(value="public")
+        ttk.Label(top_frame, text="投票访问方式：").pack(side="left", padx=6)
+        ttk.Radiobutton(top_frame, text="公网(手机4G/5G可访问)", variable=self.server_mode_var, value="public").pack(
+            side="left", padx=2
+        )
+        ttk.Radiobutton(top_frame, text="局域网(同Wi-Fi)", variable=self.server_mode_var, value="lan").pack(side="left", padx=2)
+
         ttk.Button(top_frame, text="启动手机投票服务", command=self.start_server).pack(side="left", padx=6)
         ttk.Button(top_frame, text="重置所有数据", command=self.reset_all).pack(side="left", padx=6)
 
-        self.status_var = tk.StringVar(value="状态：请先启动手机投票服务，生成二维码。")
+        self.status_var = tk.StringVar(value="状态：请选择公网模式后启动服务，生成二维码。")
         ttk.Label(top_frame, textvariable=self.status_var).pack(side="left", padx=16)
 
         qr_frame = ttk.LabelFrame(self.root, text="扫码投票二维码（手机扫码后可直接投票）")
@@ -196,6 +202,18 @@ class VotingApp:
             s.close()
         return ip
 
+    def _build_vote_urls(self) -> tuple[str, str]:
+        mode = self.server_mode_var.get()
+        if mode == "public":
+            if not self.public_base_url:
+                tunnel = ngrok.connect(addr=self.server_port)
+                self.public_base_url = tunnel.public_url.rstrip("/")
+            base = self.public_base_url
+        else:
+            base = f"http://{self.server_host}:{self.server_port}"
+
+        return f"{base}/vote/expert", f"{base}/vote/student"
+
     def start_server(self) -> None:
         if self.server_thread is not None:
             messagebox.showinfo("提示", "服务已启动")
@@ -204,8 +222,13 @@ class VotingApp:
         self.server_thread = FlaskServerThread(self.flask_app, "0.0.0.0", self.server_port)
         self.server_thread.start()
 
-        expert_url = f"http://{self.server_host}:{self.server_port}/vote/expert"
-        student_url = f"http://{self.server_host}:{self.server_port}/vote/student"
+        try:
+            expert_url, student_url = self._build_vote_urls()
+        except Exception as e:
+            self.status_var.set("状态：公网地址创建失败，请检查网络或改用局域网。")
+            self.output.insert("end", f"公网地址创建失败：{e}\n")
+            messagebox.showerror("错误", f"无法创建公网投票地址：{e}")
+            return
 
         self.expert_url_var.set(f"专家链接：{expert_url}")
         self.student_url_var.set(f"学生链接：{student_url}")
@@ -215,7 +238,8 @@ class VotingApp:
         self.qr_expert_label.configure(image=self.qr_expert_photo, text="")
         self.qr_student_label.configure(image=self.qr_student_photo, text="")
 
-        self.status_var.set("状态：服务已启动，手机可扫码投票。")
+        access_mode = "公网" if self.server_mode_var.get() == "public" else "局域网"
+        self.status_var.set(f"状态：服务已启动（{access_mode}模式），手机可扫码投票。")
         self.output.insert("end", f"投票服务已启动：{expert_url} / {student_url}\n")
 
     def reset_all(self) -> None:
