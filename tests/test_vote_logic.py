@@ -71,3 +71,9 @@ def test_invalid_ballot_reject() -> None:
         assert False, "should raise"
     except ValueError:
         assert True
+
+
+def test_parse_wjx_ranking_text_real_dash_sample() -> None:
+    text = "田德智-特种雷达研究所┋陈轲-特种雷达研究所┋张光伟-特种雷达研究所┋王江涛-民用雷达研究所┋徐智祥-民用雷达研究所┋杨晓静-多源探测研究所┋李涌睿-空天遥感研究所"
+    names = parse_wjx_ranking_text(text)
+    assert names == ["田德智", "陈轲", "张光伟", "王江涛", "徐智祥", "杨晓静", "李涌睿"]

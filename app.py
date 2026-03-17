@@ -166,9 +166,10 @@ class VotingApp:
             return []
         return rows[1:]
 
-    def _load_ballots_from_file(self, path: str) -> list[tuple[dict[str, int], str, float]]:
+    def _load_ballots_from_file(self, path: str) -> tuple[list[tuple[dict[str, int], str, float]], int]:
         raw_ballots: list[tuple[dict[str, int], str, float]] = []
         inferred_candidates: list[str] | None = None
+        skipped_rows = 0
 
         for row in self._iter_data_rows(path):
             if len(row) < 7:
@@ -182,7 +183,8 @@ class VotingApp:
             if inferred_candidates is None:
                 inferred_candidates = ordered_names
             elif set(ordered_names) != set(inferred_candidates):
-                raise ValueError("文件中不同记录的候选人集合不一致")
+                skipped_rows += 1
+                continue
 
             ballot = {name: rank for rank, name in enumerate(ordered_names, start=1)}
             weight = self.voter_weights.get(voter_name, 1.0)
@@ -201,7 +203,7 @@ class VotingApp:
             if set(inferred_candidates) != set(self.candidates):
                 raise ValueError(f"导入文件候选人与系统不一致：{inferred_candidates} vs {self.candidates}")
 
-        return raw_ballots
+        return raw_ballots, skipped_rows
 
     def _import_file(self, role: str) -> None:
         path = filedialog.askopenfilename(
@@ -212,7 +214,7 @@ class VotingApp:
             return
 
         try:
-            rows = self._load_ballots_from_file(path)
+            rows, skipped_rows = self._load_ballots_from_file(path)
             assert self.engine is not None
             if role == "专家":
                 for ballot, voter_name, weight in rows:
@@ -226,6 +228,8 @@ class VotingApp:
                     if weight != 1.0:
                         self.output.insert("end", f"学生票加权：{voter_name} 权重 {weight}\n")
                 self.output.insert("end", f"已导入学生文件：{Path(path).name}，新增 {len(rows)} 票。\n")
+            if skipped_rows > 0:
+                self.output.insert("end", f"警告：已跳过 {skipped_rows} 条候选人集合不一致的记录。\n")
             self.status_var.set("状态：文件导入成功。")
         except Exception as e:
             messagebox.showerror("导入失败", str(e))
