@@ -256,17 +256,21 @@ class VotingApp:
 
             assert self.engine is not None
             if role == "专家":
+                self.engine.expert_ballots = []
+                self.output.insert("end", "已清空此前专家导入记录。\n")
                 for ballot, voter_name, weight in rows:
                     self.engine.add_expert_ballot(ballot, weight=weight)
                     if weight != 1.0:
                         self.output.insert("end", f"专家票加权：{voter_name} 权重 {weight}\n")
-                self.output.insert("end", f"已导入专家文件：{Path(path).name}，新增 {len(rows)} 票。\n")
+                self.output.insert("end", f"已导入专家文件：{Path(path).name}，当前 {len(rows)} 票。\n")
             else:
+                self.engine.student_ballots = []
+                self.output.insert("end", "已清空此前学生导入记录。\n")
                 for ballot, voter_name, weight in rows:
                     self.engine.add_student_ballot(ballot, weight=weight)
                     if weight != 1.0:
                         self.output.insert("end", f"学生票加权：{voter_name} 权重 {weight}\n")
-                self.output.insert("end", f"已导入学生文件：{Path(path).name}，新增 {len(rows)} 票。\n")
+                self.output.insert("end", f"已导入学生文件：{Path(path).name}，当前 {len(rows)} 票。\n")
             if skipped_rows > 0:
                 self.output.insert("end", f"警告：已跳过 {skipped_rows} 条无效排序记录。\n")
             self.status_var.set("状态：文件导入成功。")
