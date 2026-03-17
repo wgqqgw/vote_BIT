@@ -1,25 +1,145 @@
 from __future__ import annotations
 
+import io
+import socket
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
-import webbrowser
+from typing import Any
 
-import cv2
+import qrcode
+from PIL import Image, ImageTk
+from flask import Flask, redirect, render_template_string, request
+from werkzeug.serving import make_server
 
 from vote_logic import VotingEngine
+
+
+VOTE_PAGE_TEMPLATE = """
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ vote_type_label }}投票</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 700px; margin: 20px auto; padding: 0 12px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+    select { width: 100%; font-size: 16px; padding: 8px; }
+    button { font-size: 17px; padding: 10px 16px; width: 100%; }
+  </style>
+</head>
+<body>
+  <h2>{{ vote_type_label }}投票</h2>
+  <p>请为7位候选人设置 <b>1~7 且不重复</b> 的名次（数字越小名次越高）。</p>
+  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+  <form method="post">
+    {% for name in candidates %}
+      <div class="card">
+        <label>{{ name }}</label>
+        <select name="{{ name }}" required>
+          <option value="">请选择名次</option>
+          {% for n in range(1,8) %}
+            <option value="{{ n }}">{{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endfor %}
+    <button type="submit">提交投票</button>
+  </form>
+</body>
+</html>
+"""
+
+SUCCESS_TEMPLATE = """
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8" />
+<body style="font-family:Arial;max-width:680px;margin:30px auto;padding:0 12px;">
+  <h2>✅ 投票成功</h2>
+  <p>你的{{ vote_type_label }}投票已提交，可以关闭此页面。</p>
+</body></html>
+"""
+
+
+class FlaskServerThread(threading.Thread):
+    def __init__(self, app: Flask, host: str, port: int) -> None:
+        super().__init__(daemon=True)
+        self.server = make_server(host, port, app)
+        self.ctx = app.app_context()
+        self.ctx.push()
+
+    def run(self) -> None:
+        self.server.serve_forever()
+
+    def stop(self) -> None:
+        self.server.shutdown()
 
 
 class VotingApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("在线投票统计系统")
-        self.root.geometry("980x720")
+        self.root.geometry("1100x760")
 
         self.candidates = [f"候选人{i}" for i in range(1, 8)]
         self.engine = VotingEngine(self.candidates)
 
+        self.server_thread: FlaskServerThread | None = None
+        self.server_host = self._get_local_ip()
+        self.server_port = 8765
+
+        self._build_flask_app()
         self._build_ui()
+
+    def _build_flask_app(self) -> None:
+        app = Flask(__name__)
+
+        @app.route("/")
+        def index() -> Any:
+            return redirect("/vote/student")
+
+        @app.route("/vote/<vote_type>", methods=["GET", "POST"])
+        def vote(vote_type: str) -> Any:
+            if vote_type not in {"expert", "student"}:
+                return "vote type invalid", 400
+
+            vote_type_label = "专家" if vote_type == "expert" else "学生"
+            if request.method == "GET":
+                return render_template_string(
+                    VOTE_PAGE_TEMPLATE,
+                    vote_type_label=vote_type_label,
+                    candidates=self.candidates,
+                    error="",
+                )
+
+            try:
+                ballot = {name: int(request.form.get(name, "0")) for name in self.candidates}
+                if vote_type == "expert":
+                    self.engine.add_expert_ballot(ballot)
+                    self.root.after(
+                        0,
+                        lambda: self.output.insert(
+                            "end", f"来自手机端：已添加专家票，第 {len(self.engine.expert_ballots)} 票。\n"
+                        ),
+                    )
+                else:
+                    self.engine.add_student_ballot(ballot)
+                    self.root.after(
+                        0,
+                        lambda: self.output.insert(
+                            "end", f"来自手机端：已添加学生票，第 {len(self.engine.student_ballots)} 票。\n"
+                        ),
+                    )
+                return render_template_string(SUCCESS_TEMPLATE, vote_type_label=vote_type_label)
+            except Exception as e:
+                return render_template_string(
+                    VOTE_PAGE_TEMPLATE,
+                    vote_type_label=vote_type_label,
+                    candidates=self.candidates,
+                    error=str(e),
+                )
+
+        self.flask_app = app
 
     def _build_ui(self) -> None:
         title = ttk.Label(self.root, text="7人专家+学生综合投票", font=("Microsoft YaHei", 16, "bold"))
@@ -28,49 +148,81 @@ class VotingApp:
         top_frame = ttk.Frame(self.root)
         top_frame.pack(fill="x", padx=12)
 
-        ttk.Button(top_frame, text="扫码打开在线投票链接", command=self.scan_qr_and_open).pack(side="left", padx=6)
+        ttk.Button(top_frame, text="启动手机投票服务", command=self.start_server).pack(side="left", padx=6)
         ttk.Button(top_frame, text="重置所有数据", command=self.reset_all).pack(side="left", padx=6)
 
-        self.status_var = tk.StringVar(value="状态：请先录入专家投票。")
+        self.status_var = tk.StringVar(value="状态：请先启动手机投票服务，生成二维码。")
         ttk.Label(top_frame, textvariable=self.status_var).pack(side="left", padx=16)
 
-        form = ttk.LabelFrame(self.root, text="当前录入的一票（给每位候选人设置1~7且不重复）")
-        form.pack(fill="x", padx=12, pady=10)
+        qr_frame = ttk.LabelFrame(self.root, text="扫码投票二维码（手机扫码后可直接投票）")
+        qr_frame.pack(fill="x", padx=12, pady=10)
 
-        self.rank_vars: dict[str, tk.IntVar] = {}
-        for i, name in enumerate(self.candidates):
-            row = i // 4
-            col = (i % 4) * 2
-            ttk.Label(form, text=name).grid(row=row, column=col, padx=6, pady=8, sticky="e")
-            v = tk.IntVar(value=i + 1)
-            self.rank_vars[name] = v
-            spin = ttk.Spinbox(form, from_=1, to=7, width=5, textvariable=v)
-            spin.grid(row=row, column=col + 1, padx=6, pady=8, sticky="w")
+        self.qr_expert_label = ttk.Label(qr_frame, text="专家投票二维码（未生成）")
+        self.qr_expert_label.grid(row=0, column=0, padx=12, pady=8)
+
+        self.qr_student_label = ttk.Label(qr_frame, text="学生投票二维码（未生成）")
+        self.qr_student_label.grid(row=0, column=1, padx=12, pady=8)
+
+        self.expert_url_var = tk.StringVar(value="专家链接：未生成")
+        self.student_url_var = tk.StringVar(value="学生链接：未生成")
+        ttk.Label(qr_frame, textvariable=self.expert_url_var).grid(row=1, column=0, padx=8, pady=4)
+        ttk.Label(qr_frame, textvariable=self.student_url_var).grid(row=1, column=1, padx=8, pady=4)
 
         actions = ttk.Frame(self.root)
         actions.pack(fill="x", padx=12, pady=8)
-
-        ttk.Button(actions, text="添加专家票", command=self.add_expert_vote).pack(side="left", padx=6)
         ttk.Button(actions, text="专家票结算", command=self.settle_expert).pack(side="left", padx=6)
-        ttk.Button(actions, text="添加学生票", command=self.add_student_vote).pack(side="left", padx=6)
         ttk.Button(actions, text="学生票结算并计算最终排名", command=self.settle_final).pack(side="left", padx=6)
 
-        self.output = tk.Text(self.root, height=28, font=("Consolas", 11))
+        self.output = tk.Text(self.root, height=22, font=("Consolas", 11))
         self.output.pack(fill="both", expand=True, padx=12, pady=10)
         self.output.insert("end", "欢迎使用投票统计系统。\n")
+
+    def _make_qr_image(self, text: str) -> ImageTk.PhotoImage:
+        img = qrcode.make(text).resize((240, 240), Image.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        pil_image = Image.open(buffer)
+        return ImageTk.PhotoImage(pil_image)
+
+    def _get_local_ip(self) -> str:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        except Exception:
+            ip = "127.0.0.1"
+        finally:
+            s.close()
+        return ip
+
+    def start_server(self) -> None:
+        if self.server_thread is not None:
+            messagebox.showinfo("提示", "服务已启动")
+            return
+
+        self.server_thread = FlaskServerThread(self.flask_app, "0.0.0.0", self.server_port)
+        self.server_thread.start()
+
+        expert_url = f"http://{self.server_host}:{self.server_port}/vote/expert"
+        student_url = f"http://{self.server_host}:{self.server_port}/vote/student"
+
+        self.expert_url_var.set(f"专家链接：{expert_url}")
+        self.student_url_var.set(f"学生链接：{student_url}")
+
+        self.qr_expert_photo = self._make_qr_image(expert_url)
+        self.qr_student_photo = self._make_qr_image(student_url)
+        self.qr_expert_label.configure(image=self.qr_expert_photo, text="")
+        self.qr_student_label.configure(image=self.qr_student_photo, text="")
+
+        self.status_var.set("状态：服务已启动，手机可扫码投票。")
+        self.output.insert("end", f"投票服务已启动：{expert_url} / {student_url}\n")
 
     def reset_all(self) -> None:
         self.engine = VotingEngine(self.candidates)
         self.output.delete("1.0", "end")
-        self.output.insert("end", "已重置。\n")
-        self.status_var.set("状态：请先录入专家投票。")
-
-    def _current_ballot(self) -> dict[str, int]:
-        ballot = {name: int(var.get()) for name, var in self.rank_vars.items()}
-        ranks = sorted(ballot.values())
-        if ranks != [1, 2, 3, 4, 5, 6, 7]:
-            raise ValueError("当前这一票无效：必须是1~7且不重复")
-        return ballot
+        self.output.insert("end", "已重置票数数据。\n")
+        self.status_var.set("状态：票数已重置。")
 
     def _render_rank(self, title: str, rank_rows: list[tuple[int, str, int]]) -> None:
         self.output.insert("end", f"\n{title}\n")
@@ -78,34 +230,15 @@ class VotingApp:
         for r, name, score in rank_rows:
             self.output.insert("end", f"{r}\t{name}\t{score}\n")
 
-    def add_expert_vote(self) -> None:
-        try:
-            ballot = self._current_ballot()
-            self.engine.add_expert_ballot(ballot)
-            self.output.insert("end", f"已添加专家票，第 {len(self.engine.expert_ballots)} 票。\n")
-        except Exception as e:
-            messagebox.showerror("错误", str(e))
-
-    def add_student_vote(self) -> None:
-        if not self.engine.expert_ballots:
-            messagebox.showwarning("提示", "请先录入并结算专家票")
-            return
-        try:
-            ballot = self._current_ballot()
-            self.engine.add_student_ballot(ballot)
-            self.output.insert("end", f"已添加学生票，第 {len(self.engine.student_ballots)} 票。\n")
-        except Exception as e:
-            messagebox.showerror("错误", str(e))
-
     def settle_expert(self) -> None:
         totals, rank_rows = self.engine.settle_experts()
         self._render_rank("专家票结算", rank_rows)
-        self.status_var.set("状态：专家票已结算，可开始录入学生票。")
+        self.status_var.set("状态：专家票已结算，可继续学生投票。")
         self.output.insert("end", f"专家票总分：{totals}\n")
 
     def settle_final(self) -> None:
         if not self.engine.student_ballots:
-            messagebox.showwarning("提示", "请先录入学生票")
+            messagebox.showwarning("提示", "尚未收到学生票")
             return
 
         result = self.engine.final_result()
@@ -119,47 +252,10 @@ class VotingApp:
         self._render_rank("最终排名（按调整后的专家总分）", result["final_rank"])
         self.status_var.set("状态：最终结果已生成。")
 
-    def scan_qr_and_open(self) -> None:
-        self.status_var.set("状态：正在打开摄像头扫码...按 Q 退出。")
-
-        def worker() -> None:
-            detector = cv2.QRCodeDetector()
-            cap = cv2.VideoCapture(0)
-
-            if not cap.isOpened():
-                self.root.after(0, lambda: messagebox.showerror("错误", "无法打开摄像头"))
-                self.root.after(0, lambda: self.status_var.set("状态：摄像头打开失败。"))
-                return
-
-            decoded = None
-            while True:
-                ok, frame = cap.read()
-                if not ok:
-                    continue
-                data, _, _ = detector.detectAndDecode(frame)
-                cv2.imshow("扫码窗口 - 按 Q 退出", frame)
-                key = cv2.waitKey(1) & 0xFF
-                if data:
-                    decoded = data
-                    break
-                if key == ord("q"):
-                    break
-
-            cap.release()
-            cv2.destroyAllWindows()
-
-            if decoded:
-                self.root.after(0, lambda: self.status_var.set(f"状态：扫码成功，已尝试打开：{decoded}"))
-                webbrowser.open(decoded)
-            else:
-                self.root.after(0, lambda: self.status_var.set("状态：未识别到二维码。"))
-
-        threading.Thread(target=worker, daemon=True).start()
-
 
 def main() -> None:
     root = tk.Tk()
-    app = VotingApp(root)
+    VotingApp(root)
     root.mainloop()
 
 
