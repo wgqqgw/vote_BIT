@@ -61,6 +61,7 @@ class VotingApp:
         ttk.Entry(weight_frame, textvariable=self.weight_var, width=8).pack(side="left", padx=6)
         ttk.Button(weight_frame, text="新增/更新权重", command=self.set_voter_weight).pack(side="left", padx=8)
         ttk.Button(weight_frame, text="重置权重", command=self.reset_weights).pack(side="left", padx=8)
+        ttk.Button(weight_frame, text="Top-X次数统计", command=self.count_topx_frequency).pack(side="left", padx=8)
 
         import_frame = ttk.LabelFrame(self.root, text="导入问卷星结果（支持.xlsx和.csv）")
         import_frame.pack(fill="x", padx=12, pady=8)
@@ -107,6 +108,36 @@ class VotingApp:
         self.weight_var.set("1")
         self.status_var.set("状态：已重置所有投票人权重。")
         self.output.insert("end", "已清空全部投票人权重设置。\n")
+
+
+    def count_topx_frequency(self) -> None:
+        if self.engine is None:
+            messagebox.showwarning("提示", "请先导入数据")
+            return
+
+        self.output.insert("end", "\n=== Top-X 选择次数统计（不算名次分）===\n")
+
+        if self.engine.expert_ballots:
+            counts, rows = self.engine.settle_expert_selection_count()
+            self.output.insert("end", "\n专家票 Top-X 次数\n")
+            self.output.insert("end", "排名\t候选人\t被选择次数\n")
+            for r, name, c in rows:
+                self.output.insert("end", f"{r}\t{name}\t{c}\n")
+            self.output.insert("end", f"专家原始次数：{counts}\n")
+
+        if self.engine.student_ballots:
+            counts, rows = self.engine.settle_student_selection_count()
+            self.output.insert("end", "\n学生票 Top-X 次数\n")
+            self.output.insert("end", "排名\t候选人\t被选择次数\n")
+            for r, name, c in rows:
+                self.output.insert("end", f"{r}\t{name}\t{c}\n")
+            self.output.insert("end", f"学生原始次数：{counts}\n")
+
+        if not self.engine.expert_ballots and not self.engine.student_ballots:
+            messagebox.showwarning("提示", "尚未导入任何票")
+            return
+
+        self.status_var.set("状态：已生成Top-X次数统计。")
 
     def _make_qr_image(self, text: str) -> ImageTk.PhotoImage:
         img = qrcode.make(text).resize((220, 220), Image.Resampling.LANCZOS)

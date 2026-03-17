@@ -63,3 +63,17 @@ def test_invalid_ballot_reject() -> None:
         assert False, "should raise"
     except ValueError:
         assert True
+
+
+def test_topx_selection_count() -> None:
+    engine = VotingEngine(["李涌睿", "王国庆", "张三"])
+    # 3位评委：李涌睿被选3次，王国庆2次，张三1次
+    engine.add_expert_ballot({"李涌睿": 1, "王国庆": 2})
+    engine.add_expert_ballot({"李涌睿": 1, "张三": 2})
+    engine.add_expert_ballot({"李涌睿": 1, "王国庆": 2})
+
+    counts, rows = engine.settle_expert_selection_count()
+    assert counts["李涌睿"] == 3
+    assert counts["王国庆"] == 2
+    assert counts["张三"] == 1
+    assert rows[0][1] == "李涌睿"
