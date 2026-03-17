@@ -13,16 +13,19 @@ class VotingEngine:
     student_ballots: List[Dict[str, int]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if len(self.candidates) != 7:
-            raise ValueError("候选人必须是7人")
+        if len(self.candidates) < 2:
+            raise ValueError("候选人至少2人")
+
+    def _expected_ranks(self) -> list[int]:
+        return list(range(1, len(self.candidates) + 1))
 
     def _validate_ballot(self, ballot: Dict[str, int]) -> None:
         if set(ballot.keys()) != set(self.candidates):
             raise ValueError("投票中候选人与系统候选人不一致")
 
         ranks = sorted(ballot.values())
-        if ranks != [1, 2, 3, 4, 5, 6, 7]:
-            raise ValueError("每一票必须对7位候选人给出1~7且不重复的排名")
+        if ranks != self._expected_ranks():
+            raise ValueError(f"每一票必须对候选人给出1~{len(self.candidates)}且不重复的排名")
 
     def add_expert_ballot(self, ballot: Dict[str, int]) -> None:
         self._validate_ballot(ballot)
@@ -55,11 +58,11 @@ class VotingEngine:
         expert_totals, expert_rank = self.settle_experts()
         student_totals, student_rank = self.settle_students()
 
-        # 学生第1名减7分，第2名减6分...第7名减1分
         adjusted_expert = expert_totals.copy()
         student_adjustment = {}
+        candidate_count = len(self.candidates)
         for rank, name, _ in student_rank:
-            delta = 8 - rank
+            delta = candidate_count + 1 - rank
             adjusted_expert[name] -= delta
             student_adjustment[name] = delta
 
