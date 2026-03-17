@@ -4,13 +4,14 @@ import io
 import socket
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any
 
 import qrcode
 from PIL import Image, ImageTk
 from flask import Flask, redirect, render_template_string, request
-from pyngrok import ngrok
+from pyngrok import conf, installer, ngrok
 from werkzeug.serving import make_server
 
 from vote_logic import VotingEngine
@@ -86,6 +87,7 @@ class VotingApp:
         self.server_host = self._get_local_ip()
         self.server_port = 8765
         self.public_base_url: str | None = None
+        self.public_tunnel = None
 
         self._build_flask_app()
         self._build_ui()
@@ -202,12 +204,21 @@ class VotingApp:
             s.close()
         return ip
 
+    def _get_ngrok_config(self) -> conf.PyngrokConfig:
+        app_dir = Path.home() / ".vote_app"
+        app_dir.mkdir(parents=True, exist_ok=True)
+        ngrok_path = app_dir / "ngrok.exe"
+        return conf.PyngrokConfig(ngrok_path=str(ngrok_path))
+
     def _build_vote_urls(self) -> tuple[str, str]:
         mode = self.server_mode_var.get()
         if mode == "public":
             if not self.public_base_url:
-                tunnel = ngrok.connect(addr=self.server_port)
-                self.public_base_url = tunnel.public_url.rstrip("/")
+                pyngrok_config = self._get_ngrok_config()
+                if not Path(pyngrok_config.ngrok_path).exists():
+                    installer.install_ngrok(pyngrok_config)
+                self.public_tunnel = ngrok.connect(addr=self.server_port, pyngrok_config=pyngrok_config)
+                self.public_base_url = self.public_tunnel.public_url.rstrip("/")
             base = self.public_base_url
         else:
             base = f"http://{self.server_host}:{self.server_port}"
@@ -215,19 +226,22 @@ class VotingApp:
         return f"{base}/vote/expert", f"{base}/vote/student"
 
     def start_server(self) -> None:
-        if self.server_thread is not None:
-            messagebox.showinfo("提示", "服务已启动")
-            return
-
-        self.server_thread = FlaskServerThread(self.flask_app, "0.0.0.0", self.server_port)
-        self.server_thread.start()
+        if self.server_thread is None:
+            self.server_thread = FlaskServerThread(self.flask_app, "0.0.0.0", self.server_port)
+            self.server_thread.start()
 
         try:
             expert_url, student_url = self._build_vote_urls()
         except Exception as e:
-            self.status_var.set("状态：公网地址创建失败，请检查网络或改用局域网。")
+            self.status_var.set("状态：公网地址创建失败，请切换局域网模式或预置 ngrok.exe。")
             self.output.insert("end", f"公网地址创建失败：{e}\n")
-            messagebox.showerror("错误", f"无法创建公网投票地址：{e}")
+            messagebox.showerror(
+                "错误",
+                "无法创建公网投票地址。\n"
+                "可选方案：\n"
+                "1) 切换为局域网模式；\n"
+                "2) 手动将 ngrok.exe 放到 %USERPROFILE%/.vote_app/ngrok.exe 后重试。",
+            )
             return
 
         self.expert_url_var.set(f"专家链接：{expert_url}")
