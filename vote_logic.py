@@ -9,8 +9,8 @@ class VotingEngine:
     """Core calculation rules for expert/student ranked voting."""
 
     candidates: List[str]
-    expert_ballots: List[Dict[str, int]] = field(default_factory=list)
-    student_ballots: List[Dict[str, int]] = field(default_factory=list)
+    expert_ballots: List[Tuple[Dict[str, int], float]] = field(default_factory=list)
+    student_ballots: List[Tuple[Dict[str, int], float]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if len(self.candidates) < 2:
@@ -27,30 +27,34 @@ class VotingEngine:
         if ranks != self._expected_ranks():
             raise ValueError(f"每一票必须对候选人给出1~{len(self.candidates)}且不重复的排名")
 
-    def add_expert_ballot(self, ballot: Dict[str, int]) -> None:
+    def add_expert_ballot(self, ballot: Dict[str, int], weight: float = 1.0) -> None:
         self._validate_ballot(ballot)
-        self.expert_ballots.append(ballot)
+        if weight <= 0:
+            raise ValueError("权重必须大于0")
+        self.expert_ballots.append((ballot, float(weight)))
 
-    def add_student_ballot(self, ballot: Dict[str, int]) -> None:
+    def add_student_ballot(self, ballot: Dict[str, int], weight: float = 1.0) -> None:
         self._validate_ballot(ballot)
-        self.student_ballots.append(ballot)
+        if weight <= 0:
+            raise ValueError("权重必须大于0")
+        self.student_ballots.append((ballot, float(weight)))
 
-    def _sum_scores(self, ballots: List[Dict[str, int]]) -> Dict[str, int]:
-        totals = {name: 0 for name in self.candidates}
-        for ballot in ballots:
+    def _sum_scores(self, ballots: List[Tuple[Dict[str, int], float]]) -> Dict[str, float]:
+        totals = {name: 0.0 for name in self.candidates}
+        for ballot, weight in ballots:
             for name, rank in ballot.items():
-                totals[name] += rank
+                totals[name] += rank * weight
         return totals
 
-    def _rank_from_totals(self, totals: Dict[str, int]) -> List[Tuple[int, str, int]]:
+    def _rank_from_totals(self, totals: Dict[str, float]) -> List[Tuple[int, str, float]]:
         ordered = sorted(totals.items(), key=lambda x: (x[1], x[0]))
         return [(i + 1, name, score) for i, (name, score) in enumerate(ordered)]
 
-    def settle_experts(self) -> tuple[Dict[str, int], List[Tuple[int, str, int]]]:
+    def settle_experts(self) -> tuple[Dict[str, float], List[Tuple[int, str, float]]]:
         totals = self._sum_scores(self.expert_ballots)
         return totals, self._rank_from_totals(totals)
 
-    def settle_students(self) -> tuple[Dict[str, int], List[Tuple[int, str, int]]]:
+    def settle_students(self) -> tuple[Dict[str, float], List[Tuple[int, str, float]]]:
         totals = self._sum_scores(self.student_ballots)
         return totals, self._rank_from_totals(totals)
 

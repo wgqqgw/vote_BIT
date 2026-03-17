@@ -30,7 +30,17 @@ def test_final_result_rule_with_6_candidates() -> None:
 
     assert result["student_adjustment"]["候选人6"] == 6
     assert result["student_adjustment"]["候选人1"] == 1
-    assert result["final_totals"]["候选人6"] == 0
+    assert result["final_totals"]["候选人6"] == 0.0
+
+
+def test_weighted_ballot() -> None:
+    cands = [f"候选人{i}" for i in range(1, 7)]
+    engine = VotingEngine(cands)
+    ballot = {name: i + 1 for i, name in enumerate(cands)}
+    engine.add_expert_ballot(ballot, weight=2)
+    totals, _ = engine.settle_experts()
+    assert totals["候选人1"] == 2.0
+    assert totals["候选人6"] == 12.0
 
 
 def test_parse_wjx_ranking_text() -> None:

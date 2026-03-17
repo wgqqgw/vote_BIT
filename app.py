@@ -5,13 +5,14 @@ import io
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from typing import Iterable
 
 import qrcode
+from openpyxl import load_workbook
 from PIL import Image, ImageTk
 
 from vote_logic import VotingEngine
 from wjx_parser import parse_wjx_ranking_text
-
 
 
 class VotingApp:
@@ -20,26 +21,15 @@ class VotingApp:
         self.root.title("雷达院奖学金专家/学生投票系统")
         self.root.geometry("1180x820")
 
-        self.candidate_vars = [tk.StringVar(value=f"候选人{i}") for i in range(1, 7)]
-        self.candidates = [v.get().strip() for v in self.candidate_vars]
-        self.engine = VotingEngine(self.candidates)
+        self.candidates: list[str] = []
+        self.engine: VotingEngine | None = None
+        self.voter_weights: dict[str, float] = {}
 
         self._build_ui()
 
     def _build_ui(self) -> None:
         title = ttk.Label(self.root, text="雷达院奖学金专家/学生投票系统（问卷星联动）", font=("Microsoft YaHei", 16, "bold"))
         title.pack(pady=10)
-
-        candidate_frame = ttk.LabelFrame(self.root, text="候选人姓名（当前默认6人，可修改后点击“应用候选人”）")
-        candidate_frame.pack(fill="x", padx=12, pady=8)
-
-        for i, var in enumerate(self.candidate_vars):
-            ttk.Label(candidate_frame, text=f"候选人{i+1}").grid(row=i // 3, column=(i % 3) * 2, padx=6, pady=5, sticky="e")
-            ttk.Entry(candidate_frame, textvariable=var, width=18).grid(
-                row=i // 3, column=(i % 3) * 2 + 1, padx=6, pady=5, sticky="w"
-            )
-
-        ttk.Button(candidate_frame, text="应用候选人", command=self.apply_candidates).grid(row=2, column=0, padx=8, pady=8, sticky="w")
 
         link_frame = ttk.LabelFrame(self.root, text="问卷星链接与二维码")
         link_frame.pack(fill="x", padx=12, pady=8)
@@ -61,11 +51,21 @@ class VotingApp:
         self.qr_student_label = ttk.Label(link_frame, text="学生二维码（待生成）")
         self.qr_student_label.grid(row=2, column=1, columnspan=2, sticky="e", padx=12, pady=8)
 
-        import_frame = ttk.LabelFrame(self.root, text="导入问卷星CSV结果")
+        weight_frame = ttk.LabelFrame(self.root, text="特定投票人权重设置（按“2、您的姓名”列匹配）")
+        weight_frame.pack(fill="x", padx=12, pady=8)
+        self.voter_name_var = tk.StringVar(value="")
+        self.weight_var = tk.StringVar(value="1")
+        ttk.Label(weight_frame, text="投票人姓名：").pack(side="left", padx=6)
+        ttk.Entry(weight_frame, textvariable=self.voter_name_var, width=18).pack(side="left", padx=6)
+        ttk.Label(weight_frame, text="权重：").pack(side="left", padx=6)
+        ttk.Entry(weight_frame, textvariable=self.weight_var, width=8).pack(side="left", padx=6)
+        ttk.Button(weight_frame, text="新增/更新权重", command=self.set_voter_weight).pack(side="left", padx=8)
+
+        import_frame = ttk.LabelFrame(self.root, text="导入问卷星结果（支持.xlsx和.csv）")
         import_frame.pack(fill="x", padx=12, pady=8)
 
-        ttk.Button(import_frame, text="导入专家CSV", command=self.import_expert_csv).pack(side="left", padx=6, pady=8)
-        ttk.Button(import_frame, text="导入学生CSV", command=self.import_student_csv).pack(side="left", padx=6, pady=8)
+        ttk.Button(import_frame, text="导入专家文件", command=self.import_expert_file).pack(side="left", padx=6, pady=8)
+        ttk.Button(import_frame, text="导入学生文件", command=self.import_student_file).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="重置数据", command=self.reset_all).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="专家票结算", command=self.settle_expert).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="学生票结算并计算最终排名", command=self.settle_final).pack(side="left", padx=6, pady=8)
@@ -78,22 +78,26 @@ class VotingApp:
         self.output.insert(
             "end",
             "欢迎使用系统。\n"
-            "当前适配问卷星固定导出格式：第6列为排序结果文本（A，单位→B，单位...）。\n",
+            "导入格式：问卷星固定结构，第6列是排序结果，第7列是“2、您的姓名”。\n",
         )
 
-    def apply_candidates(self) -> None:
-        names = [v.get().strip() for v in self.candidate_vars]
-        if any(not n for n in names):
-            messagebox.showwarning("提示", "候选人姓名不能为空")
+    def set_voter_weight(self) -> None:
+        name = self.voter_name_var.get().strip()
+        if not name:
+            messagebox.showwarning("提示", "请输入投票人姓名")
             return
-        if len(set(names)) != len(names):
-            messagebox.showwarning("提示", "候选人姓名不能重复")
+        try:
+            weight = float(self.weight_var.get().strip())
+        except ValueError:
+            messagebox.showwarning("提示", "权重必须是数字")
+            return
+        if weight <= 0:
+            messagebox.showwarning("提示", "权重必须大于0")
             return
 
-        self.candidates = names
-        self.engine = VotingEngine(self.candidates)
-        self.status_var.set("状态：候选人已更新，历史票数已清空。")
-        self.output.insert("end", f"已更新候选人：{self.candidates}\n")
+        self.voter_weights[name] = weight
+        self.status_var.set("状态：权重设置成功。")
+        self.output.insert("end", f"已设置权重：{name} -> {weight}\n")
 
     def _make_qr_image(self, text: str) -> ImageTk.PhotoImage:
         img = qrcode.make(text).resize((220, 220), Image.Resampling.LANCZOS)
@@ -126,89 +130,126 @@ class VotingApp:
         self.status_var.set("状态：二维码已生成，可扫码进入问卷星。")
         self.output.insert("end", f"已生成二维码：\n专家：{expert_url}\n学生：{student_url}\n")
 
-    def _load_ballots_from_csv(self, path: str) -> list[dict[str, int]]:
-        ballots: list[dict[str, int]] = []
-        with open(path, "r", encoding="utf-8-sig", newline="") as f:
-            reader = csv.reader(f)
-            rows = list(reader)
+    def _read_csv_rows(self, path: str) -> list[list[str]]:
+        for enc in ["utf-8-sig", "gbk", "gb18030", "utf-8"]:
+            try:
+                with open(path, "r", encoding=enc, newline="") as f:
+                    return list(csv.reader(f))
+            except UnicodeDecodeError:
+                continue
+        raise ValueError("CSV编码无法识别，请尝试另存为 UTF-8 或 GBK")
 
+    def _read_xlsx_rows(self, path: str) -> list[list[str]]:
+        wb = load_workbook(path, data_only=True)
+        ws = wb.active
+        rows: list[list[str]] = []
+        for row in ws.iter_rows(values_only=True):
+            rows.append(["" if v is None else str(v) for v in row])
+        return rows
+
+    def _iter_data_rows(self, path: str) -> Iterable[list[str]]:
+        ext = Path(path).suffix.lower()
+        if ext == ".xlsx":
+            rows = self._read_xlsx_rows(path)
+        else:
+            rows = self._read_csv_rows(path)
         if not rows:
-            raise ValueError("CSV为空")
+            return []
+        return rows[1:]
 
-        for row in rows[1:]:
+    def _load_ballots_from_file(self, path: str) -> list[tuple[dict[str, int], str, float]]:
+        raw_ballots: list[tuple[dict[str, int], str, float]] = []
+        inferred_candidates: list[str] | None = None
+
+        for row in self._iter_data_rows(path):
             if len(row) < 6:
                 continue
-            ranking_text = row[5].strip()
+            ranking_text = (row[5] or "").strip()
+            voter_name = (row[6] or "").strip() if len(row) > 6 else ""
             if not ranking_text:
                 continue
 
             ordered_names = parse_wjx_ranking_text(ranking_text)
-            if len(ordered_names) != len(self.candidates):
-                raise ValueError(
-                    f"排序候选人数不匹配：CSV中{len(ordered_names)}人，系统中{len(self.candidates)}人"
-                )
-
-            if set(ordered_names) != set(self.candidates):
-                raise ValueError(
-                    "排序项与当前候选人不一致。\n"
-                    f"CSV识别：{ordered_names}\n系统候选人：{self.candidates}"
-                )
+            if inferred_candidates is None:
+                inferred_candidates = ordered_names
+            elif set(ordered_names) != set(inferred_candidates):
+                raise ValueError("文件中不同记录的候选人集合不一致")
 
             ballot = {name: rank for rank, name in enumerate(ordered_names, start=1)}
-            ballots.append(ballot)
+            weight = self.voter_weights.get(voter_name, 1.0)
+            raw_ballots.append((ballot, voter_name, weight))
 
-        if not ballots:
-            raise ValueError("CSV中没有有效投票数据")
-        return ballots
+        if not raw_ballots:
+            raise ValueError("文件中没有有效投票数据")
 
-    def _import_csv(self, role: str) -> None:
+        if self.engine is None:
+            assert inferred_candidates is not None
+            self.candidates = inferred_candidates
+            self.engine = VotingEngine(self.candidates)
+            self.output.insert("end", f"自动识别候选人：{self.candidates}\n")
+        else:
+            assert inferred_candidates is not None
+            if set(inferred_candidates) != set(self.candidates):
+                raise ValueError(f"导入文件候选人与系统不一致：{inferred_candidates} vs {self.candidates}")
+
+        return raw_ballots
+
+    def _import_file(self, role: str) -> None:
         path = filedialog.askopenfilename(
-            title=f"选择{role}CSV",
-            filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
+            title=f"选择{role}文件",
+            filetypes=[("Excel/CSV Files", "*.xlsx *.csv"), ("All Files", "*.*")],
         )
         if not path:
             return
 
         try:
-            ballots = self._load_ballots_from_csv(path)
+            rows = self._load_ballots_from_file(path)
+            assert self.engine is not None
             if role == "专家":
-                for b in ballots:
-                    self.engine.add_expert_ballot(b)
-                self.output.insert("end", f"已导入专家CSV：{Path(path).name}，新增 {len(ballots)} 票。\n")
+                for ballot, voter_name, weight in rows:
+                    self.engine.add_expert_ballot(ballot, weight=weight)
+                    if weight != 1.0:
+                        self.output.insert("end", f"专家票加权：{voter_name} 权重 {weight}\n")
+                self.output.insert("end", f"已导入专家文件：{Path(path).name}，新增 {len(rows)} 票。\n")
             else:
-                for b in ballots:
-                    self.engine.add_student_ballot(b)
-                self.output.insert("end", f"已导入学生CSV：{Path(path).name}，新增 {len(ballots)} 票。\n")
-            self.status_var.set("状态：CSV导入成功。")
+                for ballot, voter_name, weight in rows:
+                    self.engine.add_student_ballot(ballot, weight=weight)
+                    if weight != 1.0:
+                        self.output.insert("end", f"学生票加权：{voter_name} 权重 {weight}\n")
+                self.output.insert("end", f"已导入学生文件：{Path(path).name}，新增 {len(rows)} 票。\n")
+            self.status_var.set("状态：文件导入成功。")
         except Exception as e:
             messagebox.showerror("导入失败", str(e))
 
-    def import_expert_csv(self) -> None:
-        self._import_csv("专家")
+    def import_expert_file(self) -> None:
+        self._import_file("专家")
 
-    def import_student_csv(self) -> None:
-        self._import_csv("学生")
+    def import_student_file(self) -> None:
+        self._import_file("学生")
 
     def reset_all(self) -> None:
-        self.engine = VotingEngine(self.candidates)
+        self.engine = VotingEngine(self.candidates) if self.candidates else None
         self.output.delete("1.0", "end")
         self.output.insert("end", "已重置票数数据。\n")
         self.status_var.set("状态：票数已重置。")
 
-    def _render_rank(self, title: str, rank_rows: list[tuple[int, str, int]]) -> None:
+    def _render_rank(self, title: str, rank_rows: list[tuple[int, str, float]]) -> None:
         self.output.insert("end", f"\n{title}\n")
         self.output.insert("end", "排名\t候选人\t总分(越低越好)\n")
         for r, name, score in rank_rows:
-            self.output.insert("end", f"{r}\t{name}\t{score}\n")
+            self.output.insert("end", f"{r}\t{name}\t{score:.2f}\n")
 
     def settle_expert(self) -> None:
+        if self.engine is None or not self.engine.expert_ballots:
+            messagebox.showwarning("提示", "尚未导入专家票")
+            return
         totals, rank_rows = self.engine.settle_experts()
         self._render_rank("专家票结算", rank_rows)
         self.status_var.set("状态：专家票已结算。")
         self.output.insert("end", f"专家票总分：{totals}\n")
 
     def settle_final(self) -> None:
-        if not self.engine.student_ballots:
+        if self.engine is None or not self.engine.student_ballots:
             messagebox.showwarning("提示", "尚未导入学生票")
             return
 
