@@ -5,6 +5,13 @@
 - 顶部加入北理工风格 Logo 展示位。
 - 顶部使用校徽关联色（绿色→红色）渐变背景。
 - 若 `assets/bit_logo.png` 存在则优先加载该图；否则使用内置占位徽标。
+- 渐变横幅会随窗口大小（含全屏/最大化）自动重绘，不再出现拉伸错位。
+
+### logo 放置位置
+- 源码运行时：放在项目根目录 `assets/bit_logo.png`。
+- 打包 EXE 时建议加入资源：
+  - `pyinstaller --noconfirm --onefile --windowed app.py --name "雷达院奖学金专家学生投票系统" --add-data "assets/bit_logo.png;assets"`
+
 
 按你的要求，本版本做了以下调整：
 1. 删除了“候选人姓名手动输入接口”，沿用“导入问卷星结果自动识别候选人”。

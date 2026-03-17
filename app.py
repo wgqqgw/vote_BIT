@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -28,21 +29,26 @@ class VotingApp:
 
         self._build_ui()
 
+    def _resource_path(self, relative: str) -> Path:
+        """支持源码运行与 PyInstaller onefile 运行时资源路径。"""
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+        return base / relative
+
     def _create_gradient_photo(self, width: int, height: int) -> ImageTk.PhotoImage:
         start = (13, 109, 61)   # BIT 绿色
         end = (170, 41, 37)     # BIT 校徽红
-        img = Image.new("RGB", (width, height), start)
+        img = Image.new("RGB", (max(1, width), max(1, height)), start)
         draw = ImageDraw.Draw(img)
-        for y in range(height):
+        for y in range(max(1, height)):
             t = y / max(height - 1, 1)
             r = int(start[0] * (1 - t) + end[0] * t)
             g = int(start[1] * (1 - t) + end[1] * t)
             b = int(start[2] * (1 - t) + end[2] * t)
-            draw.line([(0, y), (width, y)], fill=(r, g, b))
+            draw.line([(0, y), (max(1, width), y)], fill=(r, g, b))
         return ImageTk.PhotoImage(img)
 
     def _load_bit_logo(self, size: int = 72) -> ImageTk.PhotoImage:
-        logo_path = Path("assets/bit_logo.png")
+        logo_path = self._resource_path("assets/bit_logo.png")
         if logo_path.exists():
             img = Image.open(logo_path).convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
             return ImageTk.PhotoImage(img)
@@ -55,26 +61,34 @@ class VotingApp:
         draw.text((size // 2 - 12, size // 2 - 8), "BIT", fill=(255, 255, 255, 255))
         return ImageTk.PhotoImage(img)
 
-    def _build_ui(self) -> None:
-        banner = tk.Frame(self.root, bg="#e9f5ee")
-        banner.pack(fill="x", padx=12, pady=(10, 6))
-
-        self.banner_bg = self._create_gradient_photo(1150, 96)
-        bg_label = tk.Label(banner, image=self.banner_bg, bd=0)
-        bg_label.pack(fill="x")
-
-        self.bit_logo = self._load_bit_logo(72)
-        logo_label = tk.Label(banner, image=self.bit_logo, bd=0, bg="#155f43")
-        logo_label.place(x=16, y=12)
-
-        title = tk.Label(
-            banner,
+    def _refresh_banner(self) -> None:
+        width = max(200, self.banner_canvas.winfo_width())
+        height = self.banner_height
+        self.banner_bg = self._create_gradient_photo(width, height)
+        self.banner_canvas.delete("all")
+        self.banner_canvas.create_image(0, 0, image=self.banner_bg, anchor="nw")
+        self.banner_canvas.create_image(20, height // 2, image=self.bit_logo, anchor="w")
+        self.banner_canvas.create_text(
+            110,
+            height // 2,
             text="雷达院奖学金专家/学生投票系统（问卷星联动）",
             font=("Microsoft YaHei", 18, "bold"),
-            fg="#ffffff",
-            bg="#155f43",
+            fill="#ffffff",
+            anchor="w",
         )
-        title.place(x=108, y=28)
+
+    def _on_root_resize(self, event: tk.Event) -> None:
+        if event.widget is self.root:
+            self._refresh_banner()
+
+
+    def _build_ui(self) -> None:
+        self.banner_height = 96
+        self.banner_canvas = tk.Canvas(self.root, height=self.banner_height, highlightthickness=0, bd=0)
+        self.banner_canvas.pack(fill="x", padx=12, pady=(10, 6))
+        self.bit_logo = self._load_bit_logo(72)
+        self.root.bind("<Configure>", self._on_root_resize)
+        self.root.after(50, self._refresh_banner)
 
         link_frame = ttk.LabelFrame(self.root, text="问卷星链接与二维码")
         link_frame.pack(fill="x", padx=12, pady=8)
