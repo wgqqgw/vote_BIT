@@ -60,6 +60,7 @@ class VotingApp:
         ttk.Label(weight_frame, text="权重：").pack(side="left", padx=6)
         ttk.Entry(weight_frame, textvariable=self.weight_var, width=8).pack(side="left", padx=6)
         ttk.Button(weight_frame, text="新增/更新权重", command=self.set_voter_weight).pack(side="left", padx=8)
+        ttk.Button(weight_frame, text="重置权重", command=self.reset_weights).pack(side="left", padx=8)
 
         import_frame = ttk.LabelFrame(self.root, text="导入问卷星结果（支持.xlsx和.csv）")
         import_frame.pack(fill="x", padx=12, pady=8)
@@ -98,6 +99,14 @@ class VotingApp:
         self.voter_weights[name] = weight
         self.status_var.set("状态：权重设置成功。")
         self.output.insert("end", f"已设置权重：{name} -> {weight}\n")
+
+
+    def reset_weights(self) -> None:
+        self.voter_weights.clear()
+        self.voter_name_var.set("")
+        self.weight_var.set("1")
+        self.status_var.set("状态：已重置所有投票人权重。")
+        self.output.insert("end", "已清空全部投票人权重设置。\n")
 
     def _make_qr_image(self, text: str) -> ImageTk.PhotoImage:
         img = qrcode.make(text).resize((220, 220), Image.Resampling.LANCZOS)
