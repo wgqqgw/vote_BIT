@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -16,9 +17,10 @@ class VotingApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("在线投票统计系统（问卷星联动版）")
-        self.root.geometry("1180x800")
+        self.root.geometry("1220x860")
 
-        self.candidates = [f"候选人{i}" for i in range(1, 8)]
+        self.candidate_vars = [tk.StringVar(value=f"候选人{i}") for i in range(1, 8)]
+        self.candidates = [v.get().strip() for v in self.candidate_vars]
         self.engine = VotingEngine(self.candidates)
 
         self._build_ui()
@@ -29,10 +31,24 @@ class VotingApp:
 
         tip = ttk.Label(
             self.root,
-            text="流程：在问卷星分别创建‘专家票’和‘学生票’问卷(7个题目对应7名候选人，填写1~7且不重复)；"
-            "将链接粘贴到下方生成二维码；收集结束后导出CSV并导入本软件结算。",
+            text="说明：问卷星无稳定公开API可直接自动建问卷；本工具支持候选人姓名录入 + 一键复制题目模板 + 导入结算。",
         )
         tip.pack(fill="x", padx=12)
+
+        candidate_frame = ttk.LabelFrame(self.root, text="候选人姓名（可修改，修改后请点击“应用候选人”）")
+        candidate_frame.pack(fill="x", padx=12, pady=8)
+
+        for i, var in enumerate(self.candidate_vars):
+            ttk.Label(candidate_frame, text=f"候选人{i+1}").grid(row=i // 4, column=(i % 4) * 2, padx=6, pady=5, sticky="e")
+            ttk.Entry(candidate_frame, textvariable=var, width=16).grid(
+                row=i // 4, column=(i % 4) * 2 + 1, padx=6, pady=5, sticky="w"
+            )
+
+        ttk.Button(candidate_frame, text="应用候选人", command=self.apply_candidates).grid(row=2, column=0, padx=8, pady=8, sticky="w")
+        ttk.Button(candidate_frame, text="复制问卷星题目模板", command=self.copy_wjx_template).grid(
+            row=2, column=1, padx=8, pady=8, sticky="w"
+        )
+        ttk.Button(candidate_frame, text="打开问卷星创建页", command=self.open_wjx_pages).grid(row=2, column=2, padx=8, pady=8, sticky="w")
 
         link_frame = ttk.LabelFrame(self.root, text="问卷星链接与二维码")
         link_frame.pack(fill="x", padx=12, pady=10)
@@ -63,16 +79,54 @@ class VotingApp:
         ttk.Button(import_frame, text="专家票结算", command=self.settle_expert).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="学生票结算并计算最终排名", command=self.settle_final).pack(side="left", padx=6, pady=8)
 
-        self.status_var = tk.StringVar(value="状态：请先配置问卷链接并生成二维码。")
+        self.status_var = tk.StringVar(value="状态：可先设置候选人，再生成问卷二维码。")
         ttk.Label(self.root, textvariable=self.status_var).pack(fill="x", padx=12)
 
-        self.output = tk.Text(self.root, height=24, font=("Consolas", 11))
+        self.output = tk.Text(self.root, height=22, font=("Consolas", 11))
         self.output.pack(fill="both", expand=True, padx=12, pady=10)
         self.output.insert(
             "end",
             "欢迎使用问卷星联动版。\n"
-            "CSV导入要求：表头需包含候选人1~候选人7这7列，列值为1~7且不重复。\n",
+            "CSV导入要求：表头需包含当前候选人姓名的7列，列值为1~7且不重复。\n",
         )
+
+    def apply_candidates(self) -> None:
+        names = [v.get().strip() for v in self.candidate_vars]
+        if any(not n for n in names):
+            messagebox.showwarning("提示", "候选人姓名不能为空")
+            return
+        if len(set(names)) != 7:
+            messagebox.showwarning("提示", "候选人姓名不能重复")
+            return
+
+        self.candidates = names
+        self.engine = VotingEngine(self.candidates)
+        self.status_var.set("状态：候选人已更新，历史票数已清空。")
+        self.output.insert("end", f"已更新候选人：{self.candidates}\n")
+
+    def copy_wjx_template(self) -> None:
+        names = [v.get().strip() for v in self.candidate_vars]
+        if any(not n for n in names):
+            messagebox.showwarning("提示", "请先填写完整候选人姓名")
+            return
+
+        lines = [
+            "【问卷说明】请对以下7位候选人按1~7排名，且每个数字只能使用一次。",
+            "【推荐题型】矩阵填空/排序题（确保1~7不重复）",
+            "【候选人列表】",
+        ]
+        lines.extend([f"- {n}" for n in names])
+        text = "\n".join(lines)
+
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.status_var.set("状态：问卷模板已复制到剪贴板。")
+        self.output.insert("end", "已复制问卷星题目模板，可直接粘贴到问卷编辑页。\n")
+
+    def open_wjx_pages(self) -> None:
+        # 创建页/官网入口（用户可登录后新建2份问卷）
+        webbrowser.open("https://www.wjx.cn/")
+        self.status_var.set("状态：已打开问卷星官网，请登录后新建专家/学生两份问卷。")
 
     def _make_qr_image(self, text: str) -> ImageTk.PhotoImage:
         img = qrcode.make(text).resize((220, 220), Image.Resampling.LANCZOS)
@@ -111,7 +165,7 @@ class VotingApp:
             reader = csv.DictReader(f)
             headers = set(reader.fieldnames or [])
             if not set(self.candidates).issubset(headers):
-                raise ValueError("CSV表头缺少候选人1~候选人7列，请按模板导出问卷结果")
+                raise ValueError(f"CSV表头缺少候选人列，当前要求列名：{self.candidates}")
 
             for row in reader:
                 ballot = {name: int(str(row[name]).strip()) for name in self.candidates}
