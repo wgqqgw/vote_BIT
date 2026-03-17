@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 
 @dataclass
 class VotingEngine:
-    """Core calculation rules for expert/student ranked voting."""
+    """Core calculation rules for expert/student ranked voting (supports top-N partial ballots)."""
 
     candidates: List[str]
     expert_ballots: List[Tuple[Dict[str, int], float]] = field(default_factory=list)
@@ -16,16 +16,27 @@ class VotingEngine:
         if len(self.candidates) < 2:
             raise ValueError("候选人至少2人")
 
-    def _expected_ranks(self) -> list[int]:
-        return list(range(1, len(self.candidates) + 1))
+    def ensure_candidates(self, new_candidates: List[str]) -> int:
+        """Add unseen candidates and return count of newly added ones."""
+        added = 0
+        exists = set(self.candidates)
+        for name in new_candidates:
+            if name not in exists:
+                self.candidates.append(name)
+                exists.add(name)
+                added += 1
+        return added
 
     def _validate_ballot(self, ballot: Dict[str, int]) -> None:
-        if set(ballot.keys()) != set(self.candidates):
-            raise ValueError("投票中候选人与系统候选人不一致")
+        if not ballot:
+            raise ValueError("投票不能为空")
+        if not set(ballot.keys()).issubset(set(self.candidates)):
+            raise ValueError("投票中存在系统未知候选人")
 
         ranks = sorted(ballot.values())
-        if ranks != self._expected_ranks():
-            raise ValueError(f"每一票必须对候选人给出1~{len(self.candidates)}且不重复的排名")
+        expected = list(range(1, len(ballot) + 1))
+        if ranks != expected:
+            raise ValueError(f"每一票必须对已选择候选人给出1~{len(ballot)}且不重复的排名")
 
     def add_expert_ballot(self, ballot: Dict[str, int], weight: float = 1.0) -> None:
         self._validate_ballot(ballot)
@@ -42,8 +53,9 @@ class VotingEngine:
     def _sum_scores(self, ballots: List[Tuple[Dict[str, int], float]]) -> Dict[str, float]:
         totals = {name: 0.0 for name in self.candidates}
         for ballot, weight in ballots:
-            for name, rank in ballot.items():
-                totals[name] += rank * weight
+            unranked_score = len(ballot) + 1
+            for name in self.candidates:
+                totals[name] += ballot.get(name, unranked_score) * weight
         return totals
 
     def _rank_from_totals(self, totals: Dict[str, float]) -> List[Tuple[int, str, float]]:

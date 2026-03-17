@@ -166,9 +166,10 @@ class VotingApp:
             return []
         return rows[1:]
 
-    def _load_ballots_from_file(self, path: str) -> tuple[list[tuple[dict[str, int], str, float]], int]:
+    def _load_ballots_from_file(self, path: str) -> tuple[list[tuple[dict[str, int], str, float]], list[str], int]:
         raw_ballots: list[tuple[dict[str, int], str, float]] = []
-        inferred_candidates: list[str] | None = None
+        file_candidates_ordered: list[str] = []
+        file_candidates_set: set[str] = set()
         skipped_rows = 0
 
         for row in self._iter_data_rows(path):
@@ -180,11 +181,14 @@ class VotingApp:
                 continue
 
             ordered_names = parse_wjx_ranking_text(ranking_text)
-            if inferred_candidates is None:
-                inferred_candidates = ordered_names
-            elif set(ordered_names) != set(inferred_candidates):
+            if not ordered_names or len(set(ordered_names)) != len(ordered_names):
                 skipped_rows += 1
                 continue
+
+            for name in ordered_names:
+                if name not in file_candidates_set:
+                    file_candidates_set.add(name)
+                    file_candidates_ordered.append(name)
 
             ballot = {name: rank for rank, name in enumerate(ordered_names, start=1)}
             weight = self.voter_weights.get(voter_name, 1.0)
@@ -193,17 +197,7 @@ class VotingApp:
         if not raw_ballots:
             raise ValueError("文件中没有有效投票数据")
 
-        if self.engine is None:
-            assert inferred_candidates is not None
-            self.candidates = inferred_candidates
-            self.engine = VotingEngine(self.candidates)
-            self.output.insert("end", f"自动识别候选人：{self.candidates}\n")
-        else:
-            assert inferred_candidates is not None
-            if set(inferred_candidates) != set(self.candidates):
-                raise ValueError(f"导入文件候选人与系统不一致：{inferred_candidates} vs {self.candidates}")
-
-        return raw_ballots, skipped_rows
+        return raw_ballots, file_candidates_ordered, skipped_rows
 
     def _import_file(self, role: str) -> None:
         path = filedialog.askopenfilename(
@@ -214,7 +208,17 @@ class VotingApp:
             return
 
         try:
-            rows, skipped_rows = self._load_ballots_from_file(path)
+            rows, file_candidates, skipped_rows = self._load_ballots_from_file(path)
+            if self.engine is None:
+                self.candidates = file_candidates
+                self.engine = VotingEngine(self.candidates)
+                self.output.insert("end", f"自动识别候选人：{self.candidates}\n")
+            else:
+                added = self.engine.ensure_candidates(file_candidates)
+                if added > 0:
+                    self.candidates = self.engine.candidates
+                    self.output.insert("end", f"检测到新增候选人 {added} 位，已自动扩展候选人池。\n")
+
             assert self.engine is not None
             if role == "专家":
                 for ballot, voter_name, weight in rows:
@@ -229,7 +233,7 @@ class VotingApp:
                         self.output.insert("end", f"学生票加权：{voter_name} 权重 {weight}\n")
                 self.output.insert("end", f"已导入学生文件：{Path(path).name}，新增 {len(rows)} 票。\n")
             if skipped_rows > 0:
-                self.output.insert("end", f"警告：已跳过 {skipped_rows} 条候选人集合不一致的记录。\n")
+                self.output.insert("end", f"警告：已跳过 {skipped_rows} 条无效排序记录。\n")
             self.status_var.set("状态：文件导入成功。")
         except Exception as e:
             messagebox.showerror("导入失败", str(e))
