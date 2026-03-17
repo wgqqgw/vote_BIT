@@ -63,12 +63,13 @@ class VotingApp:
         ttk.Button(weight_frame, text="重置权重", command=self.reset_weights).pack(side="left", padx=8)
         ttk.Button(weight_frame, text="Top-X次数统计", command=self.count_topx_frequency).pack(side="left", padx=8)
         ttk.Button(weight_frame, text="导入专家文件", command=self.import_expert_file).pack(side="left", padx=8)
+        ttk.Button(weight_frame, text="重置数据", command=self.reset_all).pack(side="left", padx=8)
 
         import_frame = ttk.LabelFrame(self.root, text="终评（问卷星结果导入与结算）")
         import_frame.pack(fill="x", padx=12, pady=8)
 
+        ttk.Button(import_frame, text="导入专家文件", command=self.import_expert_file).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="导入学生文件", command=self.import_student_file).pack(side="left", padx=6, pady=8)
-        ttk.Button(import_frame, text="重置数据", command=self.reset_all).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="专家票结算", command=self.settle_expert).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="学生票结算并计算最终排名", command=self.settle_final).pack(side="left", padx=6, pady=8)
 
