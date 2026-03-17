@@ -59,3 +59,9 @@ def test_invalid_ballot_reject() -> None:
         assert False, "should raise"
     except ValueError:
         assert True
+
+
+def test_parse_wjx_ranking_text_with_varied_separators() -> None:
+    text = "李喆，特种雷达┋赵泽玮，民用雷达｜郑彭楠，特种雷达；张凯翔，特种雷达"
+    names = parse_wjx_ranking_text(text)
+    assert names == ["李喆", "赵泽玮", "郑彭楠", "张凯翔"]
