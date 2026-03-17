@@ -70,6 +70,7 @@ class VotingApp:
 
         ttk.Button(import_frame, text="导入专家文件", command=self.import_expert_file).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="导入学生文件", command=self.import_student_file).pack(side="left", padx=6, pady=8)
+        ttk.Button(import_frame, text="重置数据", command=self.reset_all).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="专家票结算", command=self.settle_expert).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="学生票结算并计算最终排名", command=self.settle_final).pack(side="left", padx=6, pady=8)
 
