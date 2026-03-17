@@ -78,7 +78,7 @@ class VotingApp:
         self.output.insert(
             "end",
             "欢迎使用系统。\n"
-            "导入格式：问卷星固定结构，第6列是排序结果，第7列是“2、您的姓名”。\n",
+            "导入格式：问卷星固定结构，第7列是排序结果，第8列是“2、您的姓名”。\n",
         )
 
     def set_voter_weight(self) -> None:
@@ -162,10 +162,10 @@ class VotingApp:
         inferred_candidates: list[str] | None = None
 
         for row in self._iter_data_rows(path):
-            if len(row) < 6:
+            if len(row) < 7:
                 continue
-            ranking_text = (row[5] or "").strip()
-            voter_name = (row[6] or "").strip() if len(row) > 6 else ""
+            ranking_text = (row[6] or "").strip()
+            voter_name = (row[7] or "").strip() if len(row) > 7 else ""
             if not ranking_text:
                 continue
 
