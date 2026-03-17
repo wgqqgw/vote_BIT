@@ -9,7 +9,7 @@ from typing import Iterable
 
 import qrcode
 from openpyxl import load_workbook
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 from vote_logic import VotingEngine
 from wjx_parser import parse_wjx_ranking_text
@@ -20,6 +20,7 @@ class VotingApp:
         self.root = root
         self.root.title("雷达院奖学金专家/学生投票系统")
         self.root.geometry("1180x820")
+        self.root.configure(bg="#e9f5ee")
 
         self.candidates: list[str] = []
         self.engine: VotingEngine | None = None
@@ -27,9 +28,53 @@ class VotingApp:
 
         self._build_ui()
 
+    def _create_gradient_photo(self, width: int, height: int) -> ImageTk.PhotoImage:
+        start = (13, 109, 61)   # BIT 绿色
+        end = (170, 41, 37)     # BIT 校徽红
+        img = Image.new("RGB", (width, height), start)
+        draw = ImageDraw.Draw(img)
+        for y in range(height):
+            t = y / max(height - 1, 1)
+            r = int(start[0] * (1 - t) + end[0] * t)
+            g = int(start[1] * (1 - t) + end[1] * t)
+            b = int(start[2] * (1 - t) + end[2] * t)
+            draw.line([(0, y), (width, y)], fill=(r, g, b))
+        return ImageTk.PhotoImage(img)
+
+    def _load_bit_logo(self, size: int = 72) -> ImageTk.PhotoImage:
+        logo_path = Path("assets/bit_logo.png")
+        if logo_path.exists():
+            img = Image.open(logo_path).convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
+            return ImageTk.PhotoImage(img)
+
+        # fallback: 生成简化占位徽标
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse((2, 2, size - 2, size - 2), fill=(170, 41, 37, 255), outline=(238, 202, 181, 255), width=4)
+        draw.ellipse((12, 12, size - 12, size - 12), fill=(13, 109, 61, 255))
+        draw.text((size // 2 - 12, size // 2 - 8), "BIT", fill=(255, 255, 255, 255))
+        return ImageTk.PhotoImage(img)
+
     def _build_ui(self) -> None:
-        title = ttk.Label(self.root, text="雷达院奖学金专家/学生投票系统（问卷星联动）", font=("Microsoft YaHei", 16, "bold"))
-        title.pack(pady=10)
+        banner = tk.Frame(self.root, bg="#e9f5ee")
+        banner.pack(fill="x", padx=12, pady=(10, 6))
+
+        self.banner_bg = self._create_gradient_photo(1150, 96)
+        bg_label = tk.Label(banner, image=self.banner_bg, bd=0)
+        bg_label.pack(fill="x")
+
+        self.bit_logo = self._load_bit_logo(72)
+        logo_label = tk.Label(banner, image=self.bit_logo, bd=0, bg="#155f43")
+        logo_label.place(x=16, y=12)
+
+        title = tk.Label(
+            banner,
+            text="雷达院奖学金专家/学生投票系统（问卷星联动）",
+            font=("Microsoft YaHei", 18, "bold"),
+            fg="#ffffff",
+            bg="#155f43",
+        )
+        title.place(x=108, y=28)
 
         link_frame = ttk.LabelFrame(self.root, text="问卷星链接与二维码")
         link_frame.pack(fill="x", padx=12, pady=8)
