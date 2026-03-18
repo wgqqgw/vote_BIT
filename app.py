@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import csv
-import io
 import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Iterable
 
-import qrcode
 from openpyxl import load_workbook
 from PIL import Image, ImageDraw, ImageTk
 
@@ -90,26 +88,6 @@ class VotingApp:
         self.root.bind("<Configure>", self._on_root_resize)
         self.root.after(50, self._refresh_banner)
 
-        link_frame = ttk.LabelFrame(self.root, text="问卷星链接与二维码")
-        link_frame.pack(fill="x", padx=12, pady=8)
-
-        self.expert_link_var = tk.StringVar(value="")
-        self.student_link_var = tk.StringVar(value="")
-
-        ttk.Label(link_frame, text="专家问卷链接：").grid(row=0, column=0, sticky="e", padx=6, pady=6)
-        ttk.Entry(link_frame, textvariable=self.expert_link_var, width=90).grid(row=0, column=1, padx=6, pady=6)
-
-        ttk.Label(link_frame, text="学生问卷链接：").grid(row=1, column=0, sticky="e", padx=6, pady=6)
-        ttk.Entry(link_frame, textvariable=self.student_link_var, width=90).grid(row=1, column=1, padx=6, pady=6)
-
-        ttk.Button(link_frame, text="生成二维码", command=self.generate_qr).grid(row=0, column=2, rowspan=2, padx=8)
-
-        self.qr_expert_label = ttk.Label(link_frame, text="专家二维码（待生成）")
-        self.qr_expert_label.grid(row=2, column=0, columnspan=2, sticky="w", padx=12, pady=8)
-
-        self.qr_student_label = ttk.Label(link_frame, text="学生二维码（待生成）")
-        self.qr_student_label.grid(row=2, column=1, columnspan=2, sticky="e", padx=12, pady=8)
-
         weight_frame = ttk.LabelFrame(self.root, text="初评（权重设置 + 专家文件导入）")
         weight_frame.pack(fill="x", padx=12, pady=8)
         self.voter_name_var = tk.StringVar(value="")
@@ -133,7 +111,7 @@ class VotingApp:
         ttk.Button(import_frame, text="专家票结算", command=self.settle_expert).pack(side="left", padx=6, pady=8)
         ttk.Button(import_frame, text="学生票结算并计算最终排名", command=self.settle_final).pack(side="left", padx=6, pady=8)
 
-        self.status_var = tk.StringVar(value="状态：请先填写问卷链接并生成二维码。")
+        self.status_var = tk.StringVar(value="状态：请导入问卷星结果并开始结算。")
         ttk.Label(self.root, textvariable=self.status_var).pack(fill="x", padx=12)
 
         self.output = tk.Text(self.root, height=24, font=("Consolas", 11))
@@ -201,37 +179,6 @@ class VotingApp:
             return
 
         self.status_var.set("状态：已生成Top-X次数统计。")
-
-    def _make_qr_image(self, text: str) -> ImageTk.PhotoImage:
-        img = qrcode.make(text).resize((220, 220), Image.Resampling.LANCZOS)
-        buffer = io.BytesIO()
-        img.save(buffer, format="PNG")
-        buffer.seek(0)
-        pil_image = Image.open(buffer)
-        return ImageTk.PhotoImage(pil_image)
-
-    def generate_qr(self) -> None:
-        expert_url = self.expert_link_var.get().strip()
-        student_url = self.student_link_var.get().strip()
-        if not expert_url or not student_url:
-            messagebox.showwarning("提示", "请先填写专家和学生问卷链接")
-            return
-
-        if not (expert_url.startswith("http://") or expert_url.startswith("https://")):
-            messagebox.showwarning("提示", "专家链接格式不正确")
-            return
-        if not (student_url.startswith("http://") or student_url.startswith("https://")):
-            messagebox.showwarning("提示", "学生链接格式不正确")
-            return
-
-        self.qr_expert_photo = self._make_qr_image(expert_url)
-        self.qr_student_photo = self._make_qr_image(student_url)
-
-        self.qr_expert_label.configure(image=self.qr_expert_photo, text="")
-        self.qr_student_label.configure(image=self.qr_student_photo, text="")
-
-        self.status_var.set("状态：二维码已生成，可扫码进入问卷星。")
-        self.output.insert("end", f"已生成二维码：\n专家：{expert_url}\n学生：{student_url}\n")
 
     def _read_csv_rows(self, path: str) -> list[list[str]]:
         for enc in ["utf-8-sig", "gbk", "gb18030", "utf-8"]:
